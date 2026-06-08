@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ReqSwipe: Requirements Engineering Challenge</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
+        
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0; padding: 0;
+            height: 100vh; width: 100vw;
+            overflow: hidden;
+            display: flex; flex-direction: column;
+            color: #f8fafc;
+            background: linear-gradient(-45deg, #4f46e5, #0f172a, #db2777, #020617);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        /* HUD Ekranı - Ses Butonu Eklendi */
+        .hud {
+            position: fixed; top: 0; left: 0; width: 100%;
+            display: flex; justify-content: space-around; align-items: center;
+            padding: 15px 10px;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            z-index: 100; font-size: 1.1rem; font-weight: 900;
+        }
+        .stat-timer { color: #f87171; text-shadow: 0 0 10px rgba(248,113,113,0.5); }
+        .stat-vp { color: #38bdf8; text-shadow: 0 0 10px rgba(56,189,248,0.5); }
+        .stat-streak { color: #f59e0b; text-shadow: 0 0 10px rgba(245,158,11,0.5); }
+        .stat-sound { cursor: pointer; transition: transform 0.2s; }
+        .stat-sound:active { transform: scale(0.8); }
+
+        .container {
+            flex: 1; display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            padding: 20px; position: relative;
+            margin-top: 60px;
+        }
+
+        .menu-screen {
+            background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(15px);
+            padding: 30px; border-radius: 24px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+            width: 100%; max-width: 350px; text-align: center; z-index: 20;
+            border: 1px solid rgba(255,255,255,0.2);
+            max-height: 80vh; overflow-y: auto; /* Kaydırma eklendi */
+        }
+        
+        h2 { margin-top: 0; color: #fff; font-size: 2rem; text-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .highlight { color: #db2777; }
+        p { color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; font-weight: 600;}
+
+        input[type="text"] {
+            width: 100%; padding: 15px; margin: 20px 0;
+            background: rgba(2, 6, 23, 0.7); border: 2px solid #4f46e5;
+            border-radius: 12px; color: white; font-size: 16px; font-weight: bold;
+            text-align: center; outline: none; transition: all 0.3s ease;
+        }
+        input[type="text"]:focus { border-color: #db2777; box-shadow: 0 0 15px rgba(219,39,119,0.5); }
+
+        button {
+            padding: 16px 20px; border: none; border-radius: 12px;
+            cursor: pointer; font-weight: 900; font-size: 1.1rem; width: 100%;
+            transition: all 0.2s ease;
+            background: linear-gradient(90deg, #4f46e5, #db2777);
+            color: white; box-shadow: 0 5px 15px rgba(219,39,119,0.4);
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        button:active { transform: scale(0.95); box-shadow: none; }
+        
+        #card-stack {
+            position: relative; width: 100%; max-width: 350px;
+            height: 55vh; max-height: 400px; perspective: 1000px;
+        }
+
+        .swipe-card {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #ffffff; color: #0f172a;
+            border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            display: flex; align-items: center; justify-content: center;
+            padding: 30px; font-size: 1.35rem; font-weight: 900;
+            text-align: center; line-height: 1.4;
+            cursor: grab; user-select: none;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+            transform-origin: 50% 100%;
+            border: 5px solid transparent;
+        }
+        
+        .swipe-card.dragging { transition: none; cursor: grabbing; }
+
+        .combo-fire .swipe-card {
+            box-shadow: 0 0 40px #f59e0b, inset 0 0 20px #ef4444 !important;
+            border-color: #f59e0b !important;
+            animation: shake 0.5s infinite alternate;
+        }
+
+        @keyframes shake {
+            0% { transform: rotate(-1deg); }
+            100% { transform: rotate(1deg); }
+        }
+
+        .instructions {
+            margin-top: 30px; display: flex; justify-content: space-between;
+            width: 100%; max-width: 350px; font-weight: 900; padding: 0 10px;
+            text-transform: uppercase; letter-spacing: 1px; font-size: 0.95rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        .inst-left { color: #4ade80; } 
+        .inst-right { color: #f87171; } 
+
+        #center-feedback {
+            position: absolute; top: 35%; left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 3.5rem; font-weight: 900;
+            text-transform: uppercase; letter-spacing: 2px;
+            opacity: 0; pointer-events: none; z-index: 200;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-shadow: 0 10px 20px rgba(0,0,0,0.6);
+            white-space: nowrap;
+        }
+        #center-feedback.show { opacity: 1; transform: translate(-50%, -50%) scale(1.1) rotate(-5deg); }
+
+        /* Liderlik Tablosu Stili */
+        #leaderboard-container {
+            margin-top: 20px; text-align: left;
+            background: rgba(0,0,0,0.3); padding: 15px; border-radius: 15px;
+        }
+        #leaderboard-container h3 { margin: 0 0 10px 0; color: #f59e0b; text-align: center; }
+        .lb-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px;}
+        .lb-row:last-child { border-bottom: none; }
+        .lb-name { color: #cbd5e1; }
+        .lb-score { font-weight: 900; color: #38bdf8; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div class="hud hidden" id="hud">
+        <div class="stat-timer">⏱ <span id="timer-display">60</span>s</div>
+        <div class="stat-vp">VP: <span id="vp-score">0</span></div>
+        <div class="stat-streak">🔥 <span id="streak-count">0</span></div>
+        <div class="stat-sound" id="sound-toggle" onclick="toggleMute()">🔊</div>
+    </div>
+
+    <div id="center-feedback"></div>
+
+    <div class="container">
+        
+        <div id="login-screen" class="menu-screen">
+            <h2>ReqSwipe <span class="highlight">Challenge</span></h2>
+            <p>Classify VaporCorp's backlog before funding runs out.</p>
+            <input type="text" id="player-code" placeholder="Enter Player Code (e.g. ID123)" required>
+            <button onclick="startGame()">Start The Crunch</button>
+        </div>
+
+        <div id="game-screen" class="hidden" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            <div id="card-stack">
+                <div id="req-card" class="swipe-card">Loading requirements...</div>
+            </div>
+            <div class="instructions">
+                <span class="inst-left">👈 Func</span>
+                <span class="inst-right">Non-Func 👉</span>
+            </div>
+        </div>
+
+        <div id="end-screen" class="menu-screen hidden">
+            <h2>Sprint Over!</h2>
+            
+            <div id="badge-display" style="font-size: 1.8rem; margin: 10px 0; font-weight: 900; text-shadow: 0 2px 10px rgba(0,0,0,0.5);"></div>
+            
+            <h1 style="color: #4ade80; font-size: 3rem; margin: 5px 0;"><span id="score-display">0</span>%</h1>
+            <h3 style="color: #f59e0b; font-size: 1.5rem; margin-bottom: 10px;">VP: <span id="final-vp">0</span></h3>
+            
+            <div id="mistake-log-container" class="hidden" style="margin-top: 15px; text-align: left; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 15px; max-height: 160px; overflow-y: auto; border: 1px solid rgba(248, 113, 113, 0.3);">
+                <h4 style="margin: 0 0 10px 0; color: #f87171; text-align: center;">Critical Ambiguities</h4>
+                <div id="mistake-list" style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.4;"></div>
+            </div>
+
+            <div id="leaderboard-container" style="margin-top: 15px;">
+                <h3>🏆 GLOBAL TOP 5 🏆</h3>
+                <div id="leaderboard-list">Loading scores...</div>
+            </div>
+
+            <button onclick="location.reload()" style="margin-top: 20px;">Play Again</button>
+        </div>
+
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. SUPABASE & AUDIO ENGINE
+        // ==========================================
+        const SUPABASE_URL = 'https://jcexthxuagscncjbssdi.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpjZXh0aHh1YWdzY25jamJzc2RpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5MTY4MDEsImV4cCI6MjA5NjQ5MjgwMX0.pQ-a-O8JokhPSrVxPaGfh1yktwxSsPt5khg0BpQsVHU';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let audioCtx;
+        let isMuted = false;
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            document.getElementById('sound-toggle').innerText = isMuted ? '🔇' : '🔊';
+        }
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(type) {
+            if (!audioCtx || isMuted) return;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            if (type === 'swipe') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'correct') {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(600, now); osc.frequency.setValueAtTime(800, now + 0.1);
+                gainNode.gain.setValueAtTime(0.3, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                osc.start(now); osc.stop(now + 0.2);
+            } else if (type === 'combo') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(400, now); osc.frequency.setValueAtTime(800, now + 0.1); osc.frequency.setValueAtTime(1200, now + 0.2);
+                gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'wrong') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, now); osc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
+                gainNode.gain.setValueAtTime(0.3, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            }
+        }
+
+        // ==========================================
+        // 2. GAME VARIABLES
+        // ==========================================
+        let playerCode = '';
+        let requirements = [];
+        let currentIndex = 0;
+        let correctAnswers = 0;
+        let velocityPoints = 0;
+        let currentStreak = 0;
+        let timeLeft = 60;
+        let timerInterval;
+        let mistakeLog = []; // YENİ: Yanlış yapılan kartları tutacağımız dizi
+
+        const cardElement = document.getElementById('req-card');
+        const feedbackElement = document.getElementById('center-feedback');
+        const cardStack = document.getElementById('card-stack');
+
+        // ==========================================
+        // 3. START GAME
+        // ==========================================
+        async function startGame() {
+            const codeInput = document.getElementById('player-code').value.trim();
+            if (!codeInput) { alert("Please enter your Player Code."); return; }
+            playerCode = codeInput;
+
+            initAudio(); 
+
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+
+            const { data, error } = await supabaseClient.from('requirements').select('*');
+            if (error || data.length === 0) {
+                cardElement.innerText = "Database Error."; return;
+            }
+
+            requirements = data.sort(() => 0.5 - Math.random());
+            
+            showCard();
+            initHammer();
+            startTimer();
+        }
+
+        // ==========================================
+        // 4. TIMER & SWIPE LOGIC
+        // ==========================================
+        function startTimer() {
+            document.getElementById('timer-display').innerText = timeLeft;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timer-display').innerText = timeLeft;
+                if (timeLeft <= 10) document.getElementById('timer-display').style.color = '#ef4444'; 
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function showCard() {
+            if (currentIndex >= requirements.length) { endGame(); return; }
+            cardElement.innerText = requirements[currentIndex].description;
+            cardElement.style.transform = '';
+            cardElement.style.borderColor = 'transparent';
+        }
+
+        function initHammer() {
+            const hammer = new Hammer(cardElement);
+            hammer.get('pan').set({ direction: Hammer.DIRECTION_HORIZONTAL });
+
+            hammer.on('pan', (e) => {
+                cardElement.classList.add('dragging');
+                const rotate = e.deltaX * 0.05;
+                cardElement.style.transform = `translate(${e.deltaX}px, ${Math.abs(e.deltaX)*0.1}px) rotate(${rotate}deg)`;
+                
+                if (e.deltaX > 50) cardElement.style.borderColor = '#f87171';
+                else if (e.deltaX < -50) cardElement.style.borderColor = '#4ade80';
+                else cardElement.style.borderColor = 'transparent';
+            });
+
+            hammer.on('panend', (e) => {
+                cardElement.classList.remove('dragging');
+                const threshold = window.innerWidth * 0.25;
+
+                if (e.deltaX > threshold) swipeOut('RIGHT');
+                else if (e.deltaX < -threshold) swipeOut('LEFT');
+                else {
+                    cardElement.style.transform = '';
+                    cardElement.style.borderColor = 'transparent';
+                }
+            });
+        }
+
+        function swipeOut(direction) {
+            playSound('swipe');
+            const moveOutWidth = window.innerWidth * 1.5;
+            const endX = direction === 'RIGHT' ? moveOutWidth : -moveOutWidth;
+            cardElement.style.transform = `translate(${endX}px, 200px) rotate(${endX * 0.1}deg)`;
+
+            const currentReq = requirements[currentIndex];
+            let isCorrect = ((direction === 'LEFT' && currentReq.req_type === 'FR') || (direction === 'RIGHT' && currentReq.req_type === 'NFR'));
+
+            if (isCorrect) {
+                correctAnswers++; currentStreak++;
+                velocityPoints += (10 * currentStreak);
+                if (!isMuted && navigator.vibrate) navigator.vibrate(40); 
+                
+                if (currentStreak >= 3) {
+                    showStamp("🔥 COMBO x" + currentStreak, "#f59e0b");
+                    playSound('combo');
+                    cardStack.classList.add('combo-fire'); 
+                } else {
+                    showStamp("YES!", "#4ade80");
+                    playSound('correct');
+                    cardStack.classList.remove('combo-fire');
+                }
+            } else {
+                currentStreak = 0;
+                if (!isMuted && navigator.vibrate) navigator.vibrate([80, 50, 80]); 
+                showStamp("WRONG!", "#f87171");
+                playSound('wrong');
+                cardStack.classList.remove('combo-fire');
+
+                // YENİ: Hata kaydını diziye ekle
+                mistakeLog.push({
+                    desc: currentReq.description,
+                    correctType: currentReq.req_type,
+                    userSwipe: direction === 'LEFT' ? 'FR' : 'NFR'
+                });
+            }
+
+            document.getElementById('vp-score').innerText = velocityPoints;
+            document.getElementById('streak-count').innerText = currentStreak;
+
+            supabaseClient.from('game_logs').insert([
+                { player_code: playerCode, req_id: currentReq.id, swipe_direction: direction, is_correct: isCorrect }
+            ]).then(({error}) => { if(error) console.error(error); });
+
+            currentIndex++;
+            setTimeout(showCard, 200); 
+        }
+
+        function showStamp(text, color) {
+            feedbackElement.innerText = text;
+            feedbackElement.style.color = color;
+            feedbackElement.classList.add('show');
+            setTimeout(() => { feedbackElement.classList.remove('show'); }, 400);
+        }
+
+        // ==========================================
+        // 7. END GAME, LEADERBOARD & BADGES
+        // ==========================================
+        async function endGame() {
+            clearInterval(timerInterval);
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('hud').classList.add('hidden');
+            cardStack.classList.remove('combo-fire');
+            
+            document.getElementById('end-screen').classList.remove('hidden');
+            
+            const accuracy = currentIndex > 0 ? Math.round((correctAnswers / currentIndex) * 100) : 0;
+            document.getElementById('score-display').innerText = accuracy;
+            document.getElementById('final-vp').innerText = velocityPoints;
+            cardElement.style.display = 'none';
+
+            // YENİ: Dinamik Rozet Sistemi
+            let badgeHtml = "";
+            if (accuracy >= 90) {
+                badgeHtml = "👑 Lead Architect";
+                document.getElementById('badge-display').style.color = "#fcd34d"; // Altın
+            } else if (accuracy >= 70) {
+                badgeHtml = "🛠️ Senior Developer";
+                document.getElementById('badge-display').style.color = "#cbd5e1"; // Gümüş
+            } else {
+                badgeHtml = "🌱 Junior Intern";
+                document.getElementById('badge-display').style.color = "#4ade80"; // Yeşil
+            }
+            document.getElementById('badge-display').innerHTML = badgeHtml;
+
+            // YENİ: Hata Günlüğünü Ekrana Basma
+            if (mistakeLog.length > 0) {
+                document.getElementById('mistake-log-container').classList.remove('hidden');
+                let mistakesHtml = "";
+                mistakeLog.forEach((mistake, index) => {
+                    mistakesHtml += `<div style="margin-bottom: 10px; border-bottom: 1px dashed rgba(255,255,255,0.2); padding-bottom: 8px;">
+                        <strong style="color: white;">Q${index + 1}:</strong> ${mistake.desc} <br>
+                        <span style="color: #f87171; font-weight: 600;">You Swiped: ${mistake.userSwipe}</span> | 
+                        <span style="color: #4ade80; font-weight: 600;">Correct: ${mistake.correctType}</span>
+                    </div>`;
+                });
+                document.getElementById('mistake-list').innerHTML = mistakesHtml;
+            }
+
+            // Confetti Animation
+            var duration = 3 * 1000;
+            var end = Date.now() + duration;
+            (function frame() {
+                confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#db2777', '#4f46e5', '#38bdf8'] });
+                confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#db2777', '#4f46e5', '#38bdf8'] });
+                if (Date.now() < end) requestAnimationFrame(frame);
+            }());
+
+            // 1. Skoru Supabase Leaderboard tablosuna kaydet (Hata Yakalamalı)
+            const { error: insertError } = await supabaseClient.from('leaderboard').insert([
+                { player_code: playerCode, vp_score: velocityPoints }
+            ]);
+            if (insertError) console.error("Leaderboard Insert Error:", insertError);
+
+            // 2. İlk 5'i çek ve ekrana yazdır
+            const { data, error: fetchError } = await supabaseClient
+                .from('leaderboard')
+                .select('player_code, vp_score')
+                .order('vp_score', { ascending: false })
+                .limit(5);
+
+            if (fetchError) console.error("Leaderboard Fetch Error:", fetchError);
+
+            let lbHtml = '';
+            if (data && data.length > 0) {
+                data.forEach((row, index) => {
+                    lbHtml += `
+                    <div class="lb-row">
+                        <span class="lb-name">${index + 1}. ${row.player_code}</span>
+                        <span class="lb-score">${row.vp_score}</span>
+                    </div>`;
+                });
+            } else {
+                lbHtml = "<div>No scores yet.</div>";
+            }
+            document.getElementById('leaderboard-list').innerHTML = lbHtml;
+        }
+    </script>
+</body>
+</html>
